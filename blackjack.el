@@ -25,6 +25,8 @@
   (autoload #'-partial "dash")
   (declare-function -table "dash")
   (autoload #'-table "dash")
+  (declare-function -keep "dash")
+  (autoload #'-keep "dash")
 )
 
 (defconst blackjack--buffer-name "* Blackjack *"
@@ -589,7 +591,7 @@ Can be a single-character currency symbol such as \"$\", \"€\" or \"£\", or a
   "Return non-nil if the GAME menu ACTION can be performed."
   (eq (slot-value game 'current-menu) action))
 
-(cl-defmacro blackjack--hand-can-pred ((action) form)
+(defmacro blackjack--hand-can-pred (action form)
   "Build a test for whether ACTION is available using FORM, a boolean expression.
 
 The generated predicate takes a single parameter GAME, which is available within
@@ -606,7 +608,7 @@ GAME and the current player hand (using the `with-slots' macro)."
          (with-slots (bet cards played stood) (blackjack--current-player-hand game)
            ,form)))))
 
-(blackjack--hand-can-pred (hit) ; => blackjack--hand-can-hit-p
+(blackjack--hand-can-pred hit ; => blackjack--hand-can-hit-p
   (not
    (or
     played
@@ -615,14 +617,14 @@ GAME and the current player hand (using the `with-slots' macro)."
     (blackjack--hand-is-blackjack-p cards)
     (blackjack--player-hand-is-busted-p cards))))
 
-(blackjack--hand-can-pred (stand) ; => blackjack--hand-can-stand-p
+(blackjack--hand-can-pred stand ; => blackjack--hand-can-stand-p
   (not
    (or
     stood
     (blackjack--player-hand-is-busted-p cards)
     (blackjack--hand-is-blackjack-p cards))))
 
-(blackjack--hand-can-pred (split) ; => blackjack--hand-can-split-p
+(blackjack--hand-can-pred split ; => blackjack--hand-can-split-p
   (and
    (not stood)
    (length< player-hands 7)
@@ -631,7 +633,7 @@ GAME and the current player hand (using the `with-slots' macro)."
    (-let (((card-0 card-1) cards))
      (= (slot-value card-0 'value) (slot-value card-1 'value)))))
 
-(blackjack--hand-can-pred (double) ; => blackjack--hand-can-double-p
+(blackjack--hand-can-pred double ; => blackjack--hand-can-double-p
   (and
    (>= money (+ (blackjack--all-bets game) bet))
    (not
@@ -1075,15 +1077,14 @@ GAME and the current player hand (using the `with-slots' macro)."
 (defun blackjack--hand-menu (game)
   "Return GAME hand menu string."
   (string-trim-right
-   (cl-labels ((blackjack--menu-item-maybe ((pred key label))
-                (if (funcall pred game) (format "(%s) %s  " key label) "")))
-     (mapconcat
-      #'blackjack--menu-item-maybe
-      `((blackjack--hand-can-hit-p    ,blackjack-hit-key         "hit")
-        (blackjack--hand-can-stand-p  ,blackjack-stand-key       "stand")
-        (blackjack--hand-can-split-p  ,blackjack-split-key       "split")
-        (blackjack--hand-can-double-p ,blackjack-deal-double-key "double"))
-      ""))))
+   (mapconcat
+    (-lambda ((pred key label))
+      (if (funcall pred game) (format "(%s) %s  " key label)))
+    `((blackjack--hand-can-hit-p    ,blackjack-hit-key         "hit")
+      (blackjack--hand-can-stand-p  ,blackjack-stand-key       "stand")
+      (blackjack--hand-can-split-p  ,blackjack-split-key       "split")
+      (blackjack--hand-can-double-p ,blackjack-deal-double-key "double"))
+    "")))
 
 (defun blackjack--ask-hand-action (game)
   "Ask hand action for GAME."
@@ -1103,17 +1104,17 @@ GAME and the current player hand (using the `with-slots' macro)."
 
 (defun blackjack--hand-actions-menu (game)
   "Hand actions menu for GAME."
-  (blackjack--read-short-answer "Hand Action "
-   (remq nil
-    (cl-labels ((blackjack--action-maybe ((pred &rest action))
-                 (when (funcall pred game) action)))
-      (mapcar
-       #'blackjack--action-maybe
-       `((blackjack--hand-can-hit-p "hit" ,blackjack-hit-key "deal a new card")
-         (blackjack--hand-can-stand-p "stand" ,blackjack-stand-key "end current hand with no further actions")
-         (blackjack--hand-can-split-p "split" ,blackjack-split-key "split hand into two hands")
-         (blackjack--hand-can-double-p "double" ,blackjack-deal-double-key "double bet, deal a new card, and end hand")
-         (always "help" ?? "show help")))))))
+  (blackjack--read-short-answer "Hand Action "  
+   (-keep
+    (-lambda ((pred . action)) (when (funcall pred game) action)) 
+    `((blackjack--hand-can-hit-p "hit" ,blackjack-hit-key "deal a new card")
+      (blackjack--hand-can-stand-p "stand" ,blackjack-stand-key
+                                   "end current hand with no further actions")
+      (blackjack--hand-can-split-p "split" ,blackjack-split-key
+                                   "split hand into two hands")
+      (blackjack--hand-can-double-p "double" ,blackjack-deal-double-key
+                                    "double bet, deal a new card, and end hand")
+      (always "help" ?? "show help")))))
 
 (defun blackjack--show-options-menu (game)
   "Switch to GAME options menu."
